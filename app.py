@@ -1,4 +1,4 @@
-# Add API usage log, removed API key, added a Auditor, added a PDF upload
+# API cloud code block update, Add API usage log, removed API key, added a Auditor, added a PDF upload
 
 import streamlit as st
 from openai import OpenAI
@@ -10,7 +10,10 @@ from dotenv import load_dotenv
 
 # 1. LOAD SECURITY & CONFIG
 load_dotenv()
-api_key = os.getenv("OPENAI_API_KEY")
+
+# --- CLOUD & LOCAL COMPATIBILITY ---
+# This looks at Streamlit Secrets FIRST (Cloud), then .env (Local)
+api_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 
 st.set_page_config(page_title="MBA Job Matcher Pro", page_icon="🚀")
 st.title("Tier-1 Job Matcher 🎯")
@@ -18,18 +21,23 @@ st.title("Tier-1 Job Matcher 🎯")
 # --- USAGE TRACKER LOGIC ---
 def log_usage():
     log_file = "usage_log.json"
-    if os.path.exists(log_file):
-        with open(log_file, "r") as f:
-            data = json.load(f)
-    else:
-        data = {"total_runs": 0, "history": []}
+    try:
+        if os.path.exists(log_file):
+            with open(log_file, "r") as f:
+                data = json.load(f)
+        else:
+            data = {"total_runs": 0, "history": []}
 
-    data["total_runs"] += 1
-    data["history"].append(str(datetime.datetime.now()))
+        data["total_runs"] += 1
+        data["history"].append(str(datetime.datetime.now()))
 
-    with open(log_file, "w") as f:
-        json.dump(data, f, indent=4)
-    return data["total_runs"]
+        with open(log_file, "w") as f:
+            json.dump(data, f, indent=4)
+        return data["total_runs"]
+    except Exception:
+        # On some cloud platforms, writing files is restricted. 
+        # We catch the error so the app doesn't crash.
+        return "N/A"
 
 # --- HELPER FUNCTIONS ---
 def extract_text_from_pdf(pdf_file):
@@ -42,9 +50,12 @@ def extract_text_from_pdf(pdf_file):
 # --- SIDEBAR STATS ---
 st.sidebar.title("App Dashboard")
 if os.path.exists("usage_log.json"):
-    with open("usage_log.json", "r") as f:
-        stats = json.load(f)
-    st.sidebar.metric("Total Scans Performed", stats["total_runs"])
+    try:
+        with open("usage_log.json", "r") as f:
+            stats = json.load(f)
+        st.sidebar.metric("Total Scans Performed", stats["total_runs"])
+    except:
+        st.sidebar.info("Analytics temporarily unavailable.")
 else:
     st.sidebar.info("No scans recorded yet.")
 
@@ -94,7 +105,7 @@ Output JSON: {"is_grounded": bool, "audit_notes": "string", "final_verified_bull
 # --- EXECUTION ---
 if st.button("Run Match Analysis"):
     if not api_key:
-        st.error("API Key missing! Ensure .env file is configured.")
+        st.error("API Key missing! If on Cloud, add it to Secrets. If Local, check .env.")
     elif not resume_content or not jd_content:
         st.error("Please provide both a Resume and a JD.")
     else:
@@ -115,11 +126,14 @@ if st.button("Run Match Analysis"):
 
             # PASS 2: THE AUDITOR
             with st.spinner("Agent 2: Fact-Checking Draft..."):
+                # Safety check for the draft
+                draft = res1.get('xyz_upgrade', {}).get('enhanced_draft', 'No draft generated')
+                
                 response_2 = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
                        {"role": "system", "content": auditor_system},
-                       {"role": "user", "content": f"RAW_RESUME: {resume_content}\nENHANCED_DRAFT: {res1['xyz_upgrade']['enhanced_draft']}"}
+                       {"role": "user", "content": f"RAW_RESUME: {resume_content}\nENHANCED_DRAFT: {draft}"}
                     ],
                     response_format={"type": "json_object"}
                 )
@@ -149,8 +163,8 @@ if st.button("Run Match Analysis"):
             st.code(res2.get("final_verified_bullet"), language="text")
             
             with st.expander("Show Audit Comparison"):
-                st.write("**Original:**", res1['xyz_upgrade']['original'])
-                st.write("**AI Draft:**", res1['xyz_upgrade']['enhanced_draft'])
+                st.write("**Original:**", res1.get('xyz_upgrade', {}).get('original'))
+                st.write("**AI Draft:**", res1.get('xyz_upgrade', {}).get('enhanced_draft'))
                 st.info(f"**2026 Insight:** {res1.get('market_insight')}")
 
         except Exception as e:
