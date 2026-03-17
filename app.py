@@ -95,11 +95,22 @@ Analyze Resume vs JD and provide JSON output:
 """
 
 auditor_system = """
-You are a Forensic Auditor. TRUTH RUBRIC:
-1. NO NEW METRICS: Replace new %/# with '[X]'.
-2. NO TITLE INFLATION: Keep Titles/Companies 100% identical to Raw.
-3. NO SCOPE CREEP: Check leadership verbs against Raw.
-Output JSON: {"is_grounded": bool, "audit_notes": "string", "final_verified_bullet": "string"}
+ROLE: Forensic Fact-Checker. 
+YOUR GOAL: Ensure 100% "Grounding" (Truthfulness) to the Raw Resume.
+
+STRICT RULES:
+1. ZERO TOLERANCE FOR NEW CONTEXT: If the original resume mentions "Pipeline" and the draft mentions "City-level business," REJECT it. 
+2. NO INVENTING SCOPE: Do not assume the user worked in different sectors, locations, or scales than what is explicitly written.
+3. DATA INTEGRITY: If the original doesn't have a specific metric or location, the draft MUST NOT have one.
+4. CORRECTION PROTOCOL: If you find a hallucination, your 'final_verified_bullet' must revert the bullet to the original resume's language, but with better formatting.
+
+OUTPUT JSON:
+{
+  "is_grounded": bool, 
+  "hallucination_detected": "string (specifically name what was invented)",
+  "audit_notes": "string", 
+  "final_verified_bullet": "string"
+}
 """
 
 # --- EXECUTION ---
@@ -142,7 +153,7 @@ if st.button("Run Match Analysis"):
             # LOG USAGE
             log_usage()
 
-            # --- DISPLAY RESULTS ---
+# --- DISPLAY RESULTS ---
             st.divider()
             
             c1, c2 = st.columns(2)
@@ -155,17 +166,22 @@ if st.button("Run Match Analysis"):
             st.error(f"**Critical Gap:** {res1.get('critical_missing_skill')}")
 
             st.write("### 💡 Verified Resume Power-Up")
+            
+            # --- NEW HALLUCINATION DETECTION UI ---
             if res2.get("is_grounded"):
-                st.success("✅ Fact-Check Passed")
+                st.success("✅ Fact-Check Passed: No hallucinations found.")
             else:
-                st.warning(f"⚠️ Note: {res2.get('audit_notes')}")
+                # If a hallucination is detected, we show the specific detail it caught in RED
+                st.error(f"🚨 Hallucination Caught: {res2.get('hallucination_detected')}")
+                st.warning(f"⚠️ Auditor Note: {res2.get('audit_notes')}")
 
             st.code(res2.get("final_verified_bullet"), language="text")
             
+            # --- KEEPING YOUR ORIGINAL EXPANDER ---
             with st.expander("Show Audit Comparison"):
-                st.write("**Original:**", res1.get('xyz_upgrade', {}).get('original'))
-                st.write("**AI Draft:**", res1.get('xyz_upgrade', {}).get('enhanced_draft'))
-                st.info(f"**2026 Insight:** {res1.get('market_insight')}")
+                st.write("**Original Resume Point:**", res1.get('xyz_upgrade', {}).get('original'))
+                st.write("**AI's Proposed Draft:**", res1.get('xyz_upgrade', {}).get('enhanced_draft'))
+                st.info(f"**2026 Market Context:** {res1.get('market_insight')}")
 
         except Exception as e:
             st.error(f"Workflow Error: {e}")
